@@ -77,6 +77,20 @@ class Termination_Fn(object):
         self.env_name = env_name
         logger.info(f"Env: {env_name}")
 
+    # new: done detect for one data
+    def single_done(self, obs, act, next_obs):
+        if "hopper" in self.env_name and "v0" in self.env_name:
+            pass
+        elif "walker2d" in self.env_name and "v0" in self.env_name:
+            height = next_obs[0]
+            angle = next_obs[1]
+            not_done = (height > 0.8) * (height < 2.0) * (angle > -1.0) * (angle < 1.0)
+            done = ~not_done
+            # done = done[:,None]
+            return done
+        else:
+            assert 1 == 2
+
     def done(self, obs, act, next_obs):
         if self.env_name == "HalfCheetah-v2" or self.env_name == "Reacher-v2":
             done = np.array([False]).repeat(len(obs))
