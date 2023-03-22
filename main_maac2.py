@@ -10,10 +10,12 @@ import random
 import math
 import torch.nn as nn
 import gym
+import d4rl
 from torch.utils.tensorboard import SummaryWriter
 import datetime
 from nets import Simple_model
 from buffer import ReplayMemory
+from buffer import ReplayBuffer
 from utility import xu2t
 from agent_maac2 import Agent
 import logging
@@ -308,6 +310,18 @@ env.action_space.seed(args.seed)
 logger.info(
     "env action space, " + f"high {env.action_space.high}, " + f"low {env.action_space.low}"
 )
+
+# new: add offline env and dataset
+dataset = d4rl.qlearning_dataset(env)
+offline_buffer = ReplayBuffer(
+        buffer_size=len(dataset["observations"]),
+        obs_shape=env.observation_space.shape,
+        obs_dtype=np.float32,
+        action_dim=np.prod(env.action_space.shape),
+        action_dtype=np.float32
+    )
+offline_buffer.load_dataset(dataset)
+
 env_e = gym.make(args.env_name)
 env_e.seed(1234)
 env_e.action_space.seed(1234)
@@ -410,6 +424,14 @@ memory_fake = ReplayMemory(
     * args.model_retain_epochs,
     args.seed,
 )
+
+# new: offline memory and train
+memory_offline = offline_buffer.transfer(args.replay_size, args.seed)
+agent.update_parameters_offline_ensemble_model(memory_offline, args.model_train_batch_size, args.weight_grad, args.near_n)
+flag_model_trained = True
+agent.model_ensemble_offline.trained = True
+agent.model_ensemble.trained = True
+
 
 # Training Loop
 updates_q = 0

@@ -138,6 +138,16 @@ class Agent(object):
             args=args,
         )
 
+        # new: offline env model 
+        self.model_ensemble_offline = EnsembleEnv(
+            args.num_networks,
+            args.num_elites,
+            state_size=num_inputs,
+            action_size=action_space.shape[0],
+            use_decay=args.use_decay,
+            args=args,
+        )
+
         self.gamma = args.gamma
         self.gamma_tensor = torch.FloatTensor([args.gamma]).to(self.device)
         self.tau = args.tau
@@ -1380,6 +1390,10 @@ class Agent(object):
 
     def update_parameters_ensemble_model(self, memory, batch_size, weight_grad, near_n):
         self.model_ensemble.update(memory, batch_size, weight_grad, near_n)
+
+    # new: update offline env model
+    def update_parameters_offline_ensemble_model(self, memory, batch_size, weight_grad, near_n):
+        self.model_ensemble_offline.update(memory, batch_size, weight_grad, near_n)
 
     def save_model(self, env_name, suffix="", model_path=None, policy_path=None, critic_path=None):
         if not os.path.exists("models/"):
