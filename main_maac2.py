@@ -503,6 +503,8 @@ for i_episode in itertools.count(1):
                 ) = agent.update_parameters_like_sac(memory, args.batch_size, updates_q_like_sac)
                 updates_q_like_sac += 1
 
+
+        # new: remove training env model
         ### train model ####
         # flag_model_trained =True
         # if total_numsteps % args.model_train_freq == 0 and len(memory) >= args.model_train_batch_size and args.real_ratio < 1.0 and total_numsteps>args.start_steps:   #### 1
@@ -512,11 +514,12 @@ for i_episode in itertools.count(1):
             and args.real_ratio < 1.0
             and total_numsteps > args.min_pool_size
         ):  #### 2
-            agent.update_parameters_ensemble_model(
-                memory, args.model_train_batch_size, args.weight_grad, args.near_n
-            )
-            flag_model_trained = True
-            agent.model_ensemble.trained = True
+            # agent.update_parameters_ensemble_model(
+            #     memory, args.model_train_batch_size, args.weight_grad, args.near_n
+            # )
+            # flag_model_trained = True
+            # agent.model_ensemble.trained = True
+            pass
 
             new_rollout_length = set_rollout_length(args, epoch_step)
             if rollout_length != new_rollout_length:
