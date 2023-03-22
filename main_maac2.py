@@ -393,6 +393,7 @@ def rollout_for_update_q(
             next_states, rewards = agent.model_ensemble_offline.step(state, action)
         # TODO: Push a batch of samples
         terminals = agent.termination_fn.done(state, action, next_states)
+        logger.info(rewards[0])
         memory_fake.push_batch(
             [
                 (
@@ -430,8 +431,20 @@ memory_fake = ReplayMemory(
 )
 
 # new: offline memory and train
-memory_offline = offline_buffer.transfer(args.replay_size, args.seed)
+# memory_offline = offline_buffer.transfer(args.replay_size, args.seed)
+
+########### test ##############
+memory_offline = ReplayMemory(args.replay_size, args.seed)
+state = env.reset()
+for i in range(10):
+    action = env.action_space.sample()
+    next_state, reward, done, _ = env.step(action)
+    mask = float(not done)
+    memory_offline.push(state, action, reward, next_state, mask, done)
+    print(reward)
 agent.update_parameters_offline_ensemble_model(memory_offline, args.model_train_batch_size, args.weight_grad, args.near_n)
+
+# agent.update_parameters_offline_ensemble_model(memory_offline, args.model_train_batch_size, args.weight_grad, args.near_n)
 flag_model_trained = True
 agent.model_ensemble_offline.trained = True
 agent.model_ensemble.trained = True

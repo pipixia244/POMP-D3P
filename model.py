@@ -325,7 +325,6 @@ class EnsembleDynamicsModel:
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[: self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
-                break_train = True
                 if break_train:
                     break
         logger.info(
@@ -468,7 +467,7 @@ class EnsembleEnv:
 
         if return_single:
             next_obs = next_obs[0]
-            rewards = rewards[0]
+            rewards = rewards[0][0]
 
         return next_obs, rewards
 
