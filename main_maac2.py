@@ -472,7 +472,11 @@ for i_episode in itertools.count(1):
         if total_numsteps % epoch_length == 0:
             epoch_step += 1
 
-        next_state, reward, done, _ = env.step(action)
+        # next_state, reward, done, _ = env.step(action)
+        # new: change to reacting with offline model
+        next_state, reward = agent.model_ensemble_offline.step(state, action, deterministic=False)
+        done = agent.termination_fn.single_done(state, action, next_state)
+        
         episode_steps += 1
         total_numsteps += 1
         episode_reward += reward
