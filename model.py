@@ -469,6 +469,9 @@ class EnsembleEnv:
             next_obs = next_obs[0]
             rewards = rewards[0][0]
 
+
+        #logger.info(rewards, rewards.shape)
+
         return next_obs, rewards
 
     def step_tensor(self, obs, act, deterministic=False, ensemble=False, use_penalty=False):
