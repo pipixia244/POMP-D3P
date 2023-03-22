@@ -386,7 +386,7 @@ def rollout_for_update_q(
         if args.model_type == "TRD":
             next_states, rewards = agent.model_ensemble_rollout.step(state, action)
         else:
-            next_states, rewards = agent.model_ensemble.step(state, action)
+            next_states, rewards = agent.model_ensemble_offline.step(state, action)
         # TODO: Push a batch of samples
         terminals = agent.termination_fn.done(state, action, next_states)
         memory_fake.push_batch(

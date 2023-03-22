@@ -234,13 +234,14 @@ class Agent(object):
         self.alpha_lrscheduler.step()
         self.policy_lrscheduler.step()
         self.model_ensemble.model.ensemble_model.lr_scheduler.step()
+        self.model_ensemble_offline.model.ensemble_model.lr_scheduler.step()
 
     def get_lr(self):
         return {
             "critic_lr": f"{self.critic_lrscheduler.get_last_lr()[0]:.5e}",
             "alpha_lr": f"{self.alpha_lrscheduler.get_last_lr()[0]:.5e}",
             "policy_lr": f"{self.policy_lrscheduler.get_last_lr()[0]:.5e}",
-            "model_lr": f"{self.model_ensemble.model.ensemble_model.lr_scheduler.get_last_lr()[0]:.5e}",
+            "model_lr": f"{self.model_ensemble_offline.model.ensemble_model.lr_scheduler.get_last_lr()[0]:.5e}",
         }
 
     def select_action(self, state, evaluate=False, ddp=False, ddp_iters=None, init_action=None):
@@ -272,7 +273,7 @@ class Agent(object):
         return action.detach().cpu().numpy()[0]
 
     def select_next_action(self, next_state_batch):
-        if self.learnq_ddp and self.model_ensemble.trained:
+        if self.learnq_ddp and self.model_ensemble_offline.trained:
             try:
                 next_state_action = self.select_action_ddp(
                     next_state_batch,
@@ -329,7 +330,7 @@ class Agent(object):
                 pi_actions[t] = action
                 pi_not_dones[t] = not_done
 
-                next_state, reward = self.model_ensemble.step_tensor(
+                next_state, reward = self.model_ensemble_offline.step_tensor(
                     state,
                     action,
                     ensemble=True,
@@ -468,7 +469,7 @@ class Agent(object):
                 i_drdx, i_drda = batch_jacobian_tupleinput(
                     lambda x, y: (
                         reward_logpi(
-                            self.model_ensemble.step_tensor(
+                            self.model_ensemble_offline.step_tensor(
                                 x,
                                 y,
                                 ensemble=True,
@@ -490,7 +491,7 @@ class Agent(object):
                     (current_s, current_a),
                 )  # bsz*num x 1 x S, bsz*num x 1 x A
                 i_dfdx, i_dfda = batch_jacobian_tupleinput(
-                    lambda x, y: self.model_ensemble.step_tensor(
+                    lambda x, y: self.model_ensemble_offline.step_tensor(
                         x, y, ensemble=True, deterministic=evaluate
                     )[0]
                     * current_not_done.float(),
@@ -538,7 +539,7 @@ class Agent(object):
                         min_x=-self.ddp_clipk * self.policy.action_scale,
                     )
                     pi_actions[i_horizon] = self.policy.clip(pi_actions[i_horizon] + delta_a)
-                    next_x, reward = self.model_ensemble.step_tensor(
+                    next_x, reward = self.model_ensemble_offline.step_tensor(
                         pi_states[i_horizon],
                         pi_actions[i_horizon],
                         ensemble=True,
@@ -691,7 +692,7 @@ class Agent(object):
                 pi_actions[t] = action
                 pi_not_dones[t] = not_done
 
-                next_state, reward = self.model_ensemble.step_tensor(
+                next_state, reward = self.model_ensemble_offline.step_tensor(
                     state,
                     action,
                     ensemble=True,
@@ -787,7 +788,7 @@ class Agent(object):
                 for t in range(self.ddph):
                     aaction = pi_actions_list[t]
                     llog_pi = self.policy.log_prob(sstate, aaction)
-                    nnext_state, rrward = self.model_ensemble.step_tensor(
+                    nnext_state, rrward = self.model_ensemble_offline.step_tensor(
                         sstate,
                         aaction,
                         ensemble=True,
@@ -854,7 +855,7 @@ class Agent(object):
                         min_x=self.ddp_clipk * self.policy.action_scale,
                     )
                     pi_actions[i_horizon] = self.policy.clip(pi_actions[i_horizon] + delta_a)
-                    next_x, reward = self.model_ensemble.step_tensor(
+                    next_x, reward = self.model_ensemble_offline.step_tensor(
                         pi_states[i_horizon],
                         pi_actions[i_horizon],
                         ensemble=True,
@@ -1220,7 +1221,7 @@ class Agent(object):
             self.alpha = self.log_alpha.exp()
         for time_step in range(H):
             action_batch, log_pi_batch, _ = self.policy.sample(state_batch)
-            next_state_batch, reward_batch = self.model_ensemble.step_tensor(
+            next_state_batch, reward_batch = self.model_ensemble_offline.step_tensor(
                 state_batch, action_batch
             )
             done_batch = self.termination_fn.done(
@@ -1276,7 +1277,7 @@ class Agent(object):
         for i in range(H):
             # action_batch = self.select_action(state_batch, evaluate=False)
             action_batch, log_pi_batch, _ = self.policy.sample(state_batch)
-            next_state_batch, reward_batch = self.model_ensemble.step_tensor(
+            next_state_batch, reward_batch = self.model_ensemble_offline.step_tensor(
                 state_batch, action_batch
             )
             next_state_batch = next_state_batch.detach()
@@ -1352,7 +1353,7 @@ class Agent(object):
             state_input = state_seq[j]
             action_input = action_seq[j]
             log_pi = log_pi_seq[j]
-            next_state, L = self.model_ensemble.step_tensor(state_input, action_input)
+            next_state, L = self.model_ensemble_offline.step_tensor(state_input, action_input)
             H = (
                 (torch.sum(p_tmp * next_state, 1).view(batch_size, 1) - L + self.alpha * log_pi)
                 * (
@@ -1408,17 +1409,17 @@ class Agent(object):
         # print('Saving models to {} and {}'.format(model_path, policy_path))
         torch.save(self.policy.state_dict(), policy_path)
         torch.save(self.critic.state_dict(), critic_path)
-        torch.save(self.model_ensemble.model.ensemble_model.state_dict(), model_path)
+        torch.save(self.model_ensemble_offline.model.ensemble_model.state_dict(), model_path)
 
     def save_checkpoint(self, savedir, step):
         fn = os.path.join(savedir, f"checkpoint_{step}.pt")
         checkpoint = {
             "args": self.args,
-            "model": self.model_ensemble.model.ensemble_model.state_dict(),
-            "model_optimizer": self.model_ensemble.model.ensemble_model.optimizer.state_dict(),
-            "model_lrscheduler": self.model_ensemble.model.ensemble_model.lr_scheduler.state_dict(),
-            "model_scaler": self.model_ensemble.model.scaler,
-            "model_elite_model_idxes": self.model_ensemble.model.elite_model_idxes,
+            "model": self.model_ensemble_offline.model.ensemble_model.state_dict(),
+            "model_optimizer": self.model_ensemble_offline.model.ensemble_model.optimizer.state_dict(),
+            "model_lrscheduler": self.model_ensemble_offline.model.ensemble_model.lr_scheduler.state_dict(),
+            "model_scaler": self.model_ensemble_offline.model.scaler,
+            "model_elite_model_idxes": self.model_ensemble_offline.model.elite_model_idxes,
             "log_alpha": self.log_alpha,
             "alpha_optimizer": self.alpha_optim.state_dict(),
             "alpha_lrscheduler": self.alpha_lrscheduler.state_dict(),
@@ -1435,15 +1436,15 @@ class Agent(object):
     def load_checkpoint(self, checkpoint):
         if isinstance(checkpoint, str):
             checkpoint = torch.load(checkpoint)
-        self.model_ensemble.model.ensemble_model.load_state_dict(checkpoint["model"]),
-        self.model_ensemble.model.ensemble_model.optimizer.load_state_dict(
+        self.model_ensemble_offline.model.ensemble_model.load_state_dict(checkpoint["model"]),
+        self.model_ensemble_offline.model.ensemble_model.optimizer.load_state_dict(
             checkpoint["model_optimizer"]
         )
-        self.model_ensemble.model.ensemble_model.lr_scheduler.load_state_dict(
+        self.model_ensemble_offline.model.ensemble_model.lr_scheduler.load_state_dict(
             checkpoint["model_lrscheduler"]
         ),
-        self.model_ensemble.model.scaler = checkpoint["model_scaler"]
-        self.model_ensemble.model.elite_model_idxes = checkpoint["model_elite_model_idxes"]
+        self.model_ensemble_offline.model.scaler = checkpoint["model_scaler"]
+        self.model_ensemble_offline.model.elite_model_idxes = checkpoint["model_elite_model_idxes"]
         # self.log_alpha.data = checkpoint["log_alpha"] # to check optim
         self.log_alpha.data.copy_(checkpoint["log_alpha"])
         self.alpha = self.log_alpha.exp()
@@ -1462,7 +1463,7 @@ class Agent(object):
             "Loading models from {} and {} and {}".format(modle_path, policy_path, critic_path)
         )
         if modle_path is not None:
-            self.model_ensemble.model.ensemble_model.load_state_dict(torch.load(modle_path))
+            self.model_ensemble_offline.model.ensemble_model.load_state_dict(torch.load(modle_path))
         if policy_path is not None:
             self.policy.load_state_dict(torch.load(policy_path))
         if critic_path is not None:
