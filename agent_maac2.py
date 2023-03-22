@@ -96,7 +96,7 @@ class Termination_Fn(object):
             done = np.array([False]).repeat(len(obs))
             # done = done[:,None]
             return done
-        elif self.env_name == "Hopper-v2":
+        elif self.env_name == "Hopper-v2" or ("hopper" in self.env_name and "v0" in self.env_name):
             height = next_obs[:, 0]
             angle = next_obs[:, 1]
             not_done = (
@@ -108,7 +108,7 @@ class Termination_Fn(object):
             done = ~not_done
             # done = done[:,None]
             return done
-        elif self.env_name == "Walker2d-v2":
+        elif self.env_name == "Walker2d-v2" or ("walker2d" in self.env_name and "v0" in self.env_name):
             height = next_obs[:, 0]
             angle = next_obs[:, 1]
             not_done = (height > 0.8) * (height < 2.0) * (angle > -1.0) * (angle < 1.0)

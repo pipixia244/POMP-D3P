@@ -22,12 +22,16 @@ import logging
 import sys
 import json
 
+# new: let logging works and get other cuda devices
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=os.environ.get("LOGLEVEL", "INFO").upper(),
     stream=sys.stdout,
 )
+logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -476,7 +480,7 @@ for i_episode in itertools.count(1):
         # new: change to reacting with offline model
         next_state, reward = agent.model_ensemble_offline.step(state, action, deterministic=False)
         done = agent.termination_fn.single_done(state, action, next_state)
-        
+
         episode_steps += 1
         total_numsteps += 1
         episode_reward += reward
