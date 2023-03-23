@@ -229,5 +229,5 @@ class ReplayBuffer:
         memory = ReplayMemory(capacity, seed)
         print(self.rewards[0])
         for x in range(self.size):
-            memory.push(self.observations[x], self.actions[x], self.rewards[x][0], self.next_observations[x], 0, self.terminals[x]) # mask=0 ?
+            memory.push(self.observations[x], self.actions[x], self.rewards[x][0], self.next_observations[x], float(not self.terminals[x]), self.terminals[x]) # mask=0 ?
         return memory
