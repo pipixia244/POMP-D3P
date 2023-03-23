@@ -1407,7 +1407,8 @@ class Agent(object):
         self.model_ensemble.update(memory, batch_size, weight_grad, near_n)
 
     # new: update offline env model
-    def update_parameters_offline_ensemble_model(self, memory, batch_size, weight_grad, near_n):
+    def update_parameters_offline_ensemble_model(self, memory, batch_size, weight_grad, near_n, test_run=False):
+        self.model_ensemble_offline.model.test_run = test_run
         self.model_ensemble_offline.update(memory, batch_size, weight_grad, near_n)
 
     def save_model(self, env_name, suffix="", model_path=None, policy_path=None, critic_path=None):

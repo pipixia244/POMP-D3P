@@ -270,6 +270,10 @@ parser.add_argument("--clip-gn", type=float, default=None)
 parser.add_argument("--no-ddp", action="store_true", default=False)
 parser.add_argument("--gbp", action="store_true", default=False)
 parser.add_argument("--random-init", action="store_true", default=False)
+
+# new: add test run
+parser.add_argument("--test-run", action="store_true", default=False)
+
 args = parser.parse_args()
 # torch.save(args,'args.file')
 if not os.path.exists("./results"):
@@ -444,7 +448,7 @@ memory_offline = offline_buffer.transfer(args.replay_size, args.seed)
 #     print(reward)
 # agent.update_parameters_offline_ensemble_model(memory_offline, args.model_train_batch_size, args.weight_grad, args.near_n)
 
-agent.update_parameters_offline_ensemble_model(memory_offline, args.model_train_batch_size, args.weight_grad, args.near_n)
+agent.update_parameters_offline_ensemble_model(memory_offline, args.model_train_batch_size, args.weight_grad, args.near_n, args.test_run)
 flag_model_trained = True
 agent.model_ensemble_offline.trained = True
 agent.model_ensemble.trained = True
