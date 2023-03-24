@@ -24,7 +24,6 @@ import json
 
 # new: let logging works and get other cuda devices
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -271,10 +270,12 @@ parser.add_argument("--no-ddp", action="store_true", default=False)
 parser.add_argument("--gbp", action="store_true", default=False)
 parser.add_argument("--random-init", action="store_true", default=False)
 
-# new: add test run
+# new: add test run and cuda device
 parser.add_argument("--test-run", action="store_true", default=False)
+parser.add_argument("--cuda-device", type=str, default="0")
 
 args = parser.parse_args()
+os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
 # torch.save(args,'args.file')
 if not os.path.exists("./results"):
     os.makedirs("./results")
