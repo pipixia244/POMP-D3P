@@ -275,6 +275,7 @@ class EnsembleDynamicsModel:
         self.scaler = StandardScaler()
         self.state_size = state_size
         self.action_size = action_size
+        self.test_run = False
 
     def train(self, inputs, labels, batch_size=256, holdout_ratio=0.0, max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
@@ -325,7 +326,7 @@ class EnsembleDynamicsModel:
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[: self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
-                if break_train:
+                if break_train or self.test_run:
                     break
         logger.info(
             "epoch: {}, holdout mse losses: [{}]".format(
@@ -432,7 +433,7 @@ class EnsembleEnv:
         self.penalty_coeff = getattr(args, "penalty_coeff", 1.0)
         self.penalty_model_var = getattr(args, "penalty_model_var", False)
 
-    def step(self, obs, act, deterministic=False):
+    def step(self, obs, act, deterministic=False, use_penalty=False):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -464,6 +465,18 @@ class EnsembleEnv:
         model_stds = ensemble_model_stds[model_idxes, batch_idxes]
 
         rewards, next_obs = samples[:, :1], samples[:, 1:]
+
+        if self.penalize_var and use_penalty:
+            if self.penalty_model_var:
+                mean_obs_means = torch.mean(ensemble_model_means, dim=0, keepdim=True)
+                diffs = ensemble_model_means - mean_obs_means
+                dists = torch.linalg.norm(diffs, dim=2, keepdim=True)
+                penalty = torch.max(dists, dim=0)[0]
+            else:
+                penalty = torch.max(
+                    torch.linalg.norm(ensemble_model_stds, dim=2, keepdim=True), dim=0
+                )[0]
+            rewards = rewards - self.penalty_coeff * penalty
 
         if return_single:
             next_obs = next_obs[0]

@@ -80,13 +80,35 @@ class Termination_Fn(object):
     # new: done detect for one data
     def single_done(self, obs, act, next_obs):
         if "hopper" in self.env_name and "v0" in self.env_name:
-            pass
+            height = next_obs[0]
+            angle = next_obs[1]
+            not_done = (
+                np.isfinite(next_obs).all(axis=-1)
+                * np.abs(next_obs[1:] < 100).all(axis=-1)
+                * (height > 0.7)
+                * (np.abs(angle) < 0.2)
+            )
+            done = ~not_done
+            return done
         elif "walker2d" in self.env_name and "v0" in self.env_name:
             height = next_obs[0]
             angle = next_obs[1]
             not_done = (height > 0.8) * (height < 2.0) * (angle > -1.0) * (angle < 1.0)
             done = ~not_done
             # done = done[:,None]
+            return done
+        elif self.env_name == "AntTruncatedObs-v2":
+            x = next_obs[0]
+            not_done = np.isfinite(next_obs).all(axis=-1) * (x >= 0.2) * (x <= 1.0)
+            done = ~not_done
+            return done
+        elif self.env_name == "InvertedPendulum-v2":
+            notdone = np.isfinite(next_obs).all(axis=-1) * (np.abs(next_obs[:, 1]) <= 0.2)
+            done = ~notdone
+            return done
+        elif self.env_name == "HumanoidTruncatedObs-v2":
+            z = next_obs[0]
+            done = (z < 1.0) + (z > 2.0)
             return done
         else:
             assert 1 == 2
@@ -247,8 +269,8 @@ class Agent(object):
         self.critic_lrscheduler.step()
         self.alpha_lrscheduler.step()
         self.policy_lrscheduler.step()
-        self.model_ensemble.model.ensemble_model.lr_scheduler.step()
-        self.model_ensemble_offline.model.ensemble_model.lr_scheduler.step()
+        # self.model_ensemble.model.ensemble_model.lr_scheduler.step()
+        # self.model_ensemble_offline.model.ensemble_model.lr_scheduler.step()
 
     def get_lr(self):
         return {

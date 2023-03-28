@@ -466,8 +466,6 @@ num_episodes = 0
 reward_save = []
 num_updates_pmp = 0
 
-flag_model_trained = False  ##### use true model do not need to train
-
 #### for rollout like mbpo
 epoch_step = -1
 epoch_length = args.epoch_length
@@ -561,7 +559,6 @@ for i_episode in itertools.count(1):
         # ### train policy ###
         if (
             len(memory) >= args.batch_size
-            and flag_model_trained
             and len(memory) >= args.min_pool_size
         ):
             # if len(memory) > args.batch_size_pmp and flag_model_trained and len(memory) >= args.min_pool_size:
@@ -617,6 +614,41 @@ for i_episode in itertools.count(1):
             torch.cuda.empty_cache()
 
         # evaluate
+
+        if total_numsteps % args.see_freq == 0:
+            avg_reward = 0.0
+            avg_steps = 0.0
+            episodes = 10
+            for _ in range(episodes):
+                episode_reward_e = 0
+                episode_steps_e = 0
+                done_e = False
+                state_e = env_e.reset()
+                while not done_e:
+                    action_e = agent.select_action(state_e, evaluate=True, ddp=False)
+                    episode_steps_e += 1
+                    # next_state_e, reward_e, done_e, _ = env_e.step(action_e)  # fix bug
+                    next_state_e, reward_e = agent.model_ensemble_offline.step(state_e, action_e)
+                    done_e = agent.termination_fn.single_done(state_e, action_e, next_state_e)
+                    episode_reward_e += reward_e
+                    state_e = next_state_e
+                avg_reward += episode_reward_e
+                avg_steps += episode_steps_e
+            avg_reward /= episodes
+            avg_steps /= episodes
+            reward_save.append([total_numsteps, avg_reward])
+            # print(total_numsteps, avg_reward, avg_steps)
+            logger.info(
+                "total_numsteps {}, policy, offline_avg_reward {}, offline_avg_steps {}.".format(
+                    total_numsteps, avg_reward, avg_steps
+                )
+            )
+            logger.info(json.dumps(agent.get_lr()))
+            # file_name = f"{args.save_prefix}_{args.env_name}_{args.batch_size_pmp}_{args.update_policy_times}_{args.lr}_{args.seed}_{args.updates_per_step}_{args.H}"
+            # if args.save_result:
+            #     np.save(f"./results/{file_name}", reward_save)
+            writer.add_scalar("avg_reward_and_step_number/offline_reward", avg_reward, total_numsteps)
+
         if total_numsteps % args.see_freq == 0 or total_numsteps == 1:
             if args.ddp_evaluate:
                 with aggregate("inference"):
