@@ -395,7 +395,7 @@ def rollout_for_update_q(
         if args.model_type == "TRD":
             next_states, rewards = agent.model_ensemble_rollout.step(state, action)
         else:
-            next_states, rewards = agent.model_ensemble_offline.step(state, action)
+            next_states, rewards = agent.model_ensemble_offline.step(state, action, use_penalty=args.penalize_var)
         # TODO: Push a batch of samples
         terminals = agent.termination_fn.done(state, action, next_states)
         logger.info(rewards[0])
@@ -494,7 +494,7 @@ for i_episode in itertools.count(1):
 
         # next_state, reward, done, _ = env.step(action)
         # new: change to reacting with offline model
-        next_state, reward = agent.model_ensemble_offline.step(state, action, deterministic=False)
+        next_state, reward = agent.model_ensemble_offline.step(state, action, deterministic=False, use_penalty=args.penalize_var)
         done = agent.termination_fn.single_done(state, action, next_state)
 
         episode_steps += 1

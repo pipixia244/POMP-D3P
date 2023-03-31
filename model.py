@@ -466,6 +466,10 @@ class EnsembleEnv:
 
         rewards, next_obs = samples[:, :1], samples[:, 1:]
 
+        ensemble_model_means = torch.tensor(ensemble_model_means)
+        ensemble_model_stds = torch.tensor(ensemble_model_stds)
+        rewards = torch.tensor(rewards)
+
         if self.penalize_var and use_penalty:
             if self.penalty_model_var:
                 mean_obs_means = torch.mean(ensemble_model_means, dim=0, keepdim=True)
@@ -477,6 +481,8 @@ class EnsembleEnv:
                     torch.linalg.norm(ensemble_model_stds, dim=2, keepdim=True), dim=0
                 )[0]
             rewards = rewards - self.penalty_coeff * penalty
+
+        rewards = rewards.detach().cpu().numpy()
 
         if return_single:
             next_obs = next_obs[0]
