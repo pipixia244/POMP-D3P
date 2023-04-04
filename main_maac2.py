@@ -19,6 +19,7 @@ from buffer import ReplayBuffer
 from utility import xu2t
 from agent_maac2 import Agent
 import logging
+from rl_plotter.logger import Logger
 import sys
 import json
 
@@ -276,6 +277,8 @@ parser.add_argument("--cuda-device", type=str, default="0")
 
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
+rlLogger = Logger(exp_name=args.save_prefix, env_name=args.env_name, seed=args.seed)
+modelLogger = rlLogger.new_custom_logger("model.csv", fieldnames=["model_reward", "model_reward_no_penalty"])
 # torch.save(args,'args.file')
 if not os.path.exists("./results"):
     os.makedirs("./results")
@@ -496,6 +499,8 @@ for i_episode in itertools.count(1):
         # new: change to reacting with offline model
         next_state, reward = agent.model_ensemble_offline.step(state, action, deterministic=False, use_penalty=args.penalize_var)
         done = agent.termination_fn.single_done(state, action, next_state)
+        if episode_steps == env._max_episode_steps - 1:
+            done = True
 
         episode_steps += 1
         total_numsteps += 1
@@ -524,7 +529,14 @@ for i_episode in itertools.count(1):
                     policy_loss,
                     ent_loss,
                     alpha,
-                ) = agent.update_parameters_like_sac(memory, args.batch_size, updates_q_like_sac)
+                ) = agent.update_parameters_like_sac(memory_offline, args.batch_size, updates_q_like_sac)
+                # (
+                #     critic_1_loss,
+                #     critic_2_loss,
+                #     policy_loss,
+                #     ent_loss,
+                #     alpha,
+                # ) = agent.update_parameters_like_sac(memory, args.batch_size, updates_q_like_sac)
                 updates_q_like_sac += 1
 
 
@@ -565,7 +577,7 @@ for i_episode in itertools.count(1):
             with aggregate("train"):
                 for i in range(args.update_policy_times):
                     loss_policy, dQds_norm = agent.update_parameters_policy(
-                        state, memory, memory_fake, args.H, args.batch_size_pmp
+                        state, memory_offline, memory_fake, args.H, args.batch_size_pmp
                     )
                     # rollout_for_update_q(agent, memory, memory_fake, 1, 256)
                 num_updates_pmp += args.update_policy_times
@@ -596,7 +608,7 @@ for i_episode in itertools.count(1):
                         ff,
                         gg,
                     ) = agent.update_parameters_q(
-                        memory, memory_fake, args.batch_size, updates_q, real_ratio=args.real_ratio
+                        memory_offline, memory_fake, args.batch_size, updates_q, real_ratio=args.real_ratio
                     )
                 # critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters_like_sac(memory, args.batch_size, updates_q)
                 updates_q += 1
@@ -618,29 +630,40 @@ for i_episode in itertools.count(1):
         if total_numsteps % args.see_freq == 0:
             avg_reward = 0.0
             avg_steps = 0.0
+            avg_reward_no = 0.0
+            reward_list = list()
+            reward_list_nopenalty = list()
             episodes = 10
             for _ in range(episodes):
                 episode_reward_e = 0
                 episode_steps_e = 0
+                episode_reward_e_no = 0
                 done_e = False
                 state_e = env_e.reset()
                 while not done_e:
                     action_e = agent.select_action(state_e, evaluate=True, ddp=False)
                     episode_steps_e += 1
                     # next_state_e, reward_e, done_e, _ = env_e.step(action_e)  # fix bug
-                    next_state_e, reward_e = agent.model_ensemble_offline.step(state_e, action_e)
+                    next_state_e, reward_e = agent.model_ensemble_offline.step(state_e, action_e, use_penalty=args.penalize_var)
+                    next_state_e_no, reward_e_no = agent.model_ensemble_offline.step(state_e, action_e, use_penalty=False)
                     done_e = agent.termination_fn.single_done(state_e, action_e, next_state_e)
                     episode_reward_e += reward_e
+                    episode_reward_e_no += reward_e_no
                     state_e = next_state_e
+                reward_list.append(episode_reward_e)
+                reward_list_nopenalty.append(episode_reward_e_no)
                 avg_reward += episode_reward_e
+                avg_reward_no += episode_reward_e_no
                 avg_steps += episode_steps_e
+            modelLogger.update(fieldvalues=[reward_list, reward_list_nopenalty], total_steps=total_numsteps)
             avg_reward /= episodes
+            avg_reward_no /= episodes
             avg_steps /= episodes
             reward_save.append([total_numsteps, avg_reward])
             # print(total_numsteps, avg_reward, avg_steps)
             logger.info(
-                "total_numsteps {}, policy, offline_avg_reward {}, offline_avg_steps {}.".format(
-                    total_numsteps, avg_reward, avg_steps
+                "total_numsteps {}, policy, offline_avg_reward_penalty {}, no_penalty_reward {}, offline_avg_steps {}.".format(
+                    total_numsteps, avg_reward, avg_reward_no, avg_steps
                 )
             )
             logger.info(json.dumps(agent.get_lr()))
@@ -699,6 +722,7 @@ for i_episode in itertools.count(1):
             avg_reward = 0.0
             avg_steps = 0.0
             episodes = 10
+            reward_list = list()
             for _ in range(episodes):
                 episode_reward_e = 0
                 episode_steps_e = 0
@@ -712,6 +736,8 @@ for i_episode in itertools.count(1):
                     state_e = next_state_e
                 avg_reward += episode_reward_e
                 avg_steps += episode_steps_e
+                reward_list.append(episode_reward_e)
+            rlLogger.update(score=reward_list, total_steps=total_numsteps)
             avg_reward /= episodes
             avg_steps /= episodes
             reward_save.append([total_numsteps, avg_reward])

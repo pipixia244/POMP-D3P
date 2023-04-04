@@ -17,6 +17,7 @@ import math
 from functorch import jacrev, jacfwd
 import metrics
 from utility import get_lrschedule
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +301,7 @@ class Agent(object):
                         .numpy()
                     )
             except Exception as e:
+                traceback.print_exc()
                 logger.info(f"Catch exception {e}, and fallback to SAC.")
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         if evaluate is False:
@@ -371,7 +373,7 @@ class Agent(object):
                     action,
                     ensemble=True,
                     deterministic=evaluate,
-                    use_penalty=evaluate and self.penalize_var,
+                    use_penalty=self.penalize_var,
                 )
                 pi_rewards[t] = reward
                 done_batch = self.termination_fn.done(
@@ -510,7 +512,7 @@ class Agent(object):
                                 y,
                                 ensemble=True,
                                 deterministic=evaluate,
-                                use_penalty=evaluate and self.penalize_var,
+                                use_penalty=self.penalize_var,
                             )[1],
                             self.policy.log_prob(x, y),
                             self.alpha,
@@ -528,7 +530,7 @@ class Agent(object):
                 )  # bsz*num x 1 x S, bsz*num x 1 x A
                 i_dfdx, i_dfda = batch_jacobian_tupleinput(
                     lambda x, y: self.model_ensemble_offline.step_tensor(
-                        x, y, ensemble=True, deterministic=evaluate
+                        x, y, ensemble=True, deterministic=evaluate, use_penalty=self.penalize_var
                     )[0]
                     * current_not_done.float(),
                     (current_s, current_a),
@@ -580,7 +582,7 @@ class Agent(object):
                         pi_actions[i_horizon],
                         ensemble=True,
                         deterministic=evaluate,
-                        use_penalty=evaluate and self.penalize_var,
+                        use_penalty=self.penalize_var,
                     )
                     pi_rewards[i_horizon] = reward
                     if i_horizon < self.ddph - 1:
@@ -733,7 +735,7 @@ class Agent(object):
                     action,
                     ensemble=True,
                     deterministic=evaluate,
-                    use_penalty=evaluate and self.penalize_var,
+                    use_penalty=self.penalize_var,
                 )
 
                 pi_rewards[t] = reward
@@ -829,7 +831,7 @@ class Agent(object):
                         aaction,
                         ensemble=True,
                         deterministic=evaluate,
-                        use_penalty=evaluate and self.penalize_var,
+                        use_penalty=self.penalize_var,
                     )
                     nnot_done = pi_not_dones[t]
                     if t == self.ddph - 1:
@@ -896,7 +898,7 @@ class Agent(object):
                         pi_actions[i_horizon],
                         ensemble=True,
                         deterministic=evaluate,
-                        use_penalty=evaluate and self.penalize_var,
+                        use_penalty=self.penalize_var,
                     )
                     pi_rewards[i_horizon] = reward
                     if i_horizon < self.ddph - 1:
@@ -1258,7 +1260,7 @@ class Agent(object):
         for time_step in range(H):
             action_batch, log_pi_batch, _ = self.policy.sample(state_batch)
             next_state_batch, reward_batch = self.model_ensemble_offline.step_tensor(
-                state_batch, action_batch
+                state_batch, action_batch, use_penalty=self.penalize_var
             )
             done_batch = self.termination_fn.done(
                 state_batch.detach().to("cpu").numpy(),
@@ -1314,7 +1316,7 @@ class Agent(object):
             # action_batch = self.select_action(state_batch, evaluate=False)
             action_batch, log_pi_batch, _ = self.policy.sample(state_batch)
             next_state_batch, reward_batch = self.model_ensemble_offline.step_tensor(
-                state_batch, action_batch
+                state_batch, action_batch, use_penalty=self.penalize_var
             )
             next_state_batch = next_state_batch.detach()
             # done_batch = [False]*state_batch.size(0)
@@ -1389,7 +1391,7 @@ class Agent(object):
             state_input = state_seq[j]
             action_input = action_seq[j]
             log_pi = log_pi_seq[j]
-            next_state, L = self.model_ensemble_offline.step_tensor(state_input, action_input)
+            next_state, L = self.model_ensemble_offline.step_tensor(state_input, action_input, use_penalty=self.penalize_var)
             H = (
                 (torch.sum(p_tmp * next_state, 1).view(batch_size, 1) - L + self.alpha * log_pi)
                 * (
