@@ -15,6 +15,7 @@ import gzip
 import itertools
 import logging
 
+logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 # import copy
 
