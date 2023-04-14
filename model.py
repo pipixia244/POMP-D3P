@@ -155,6 +155,7 @@ class EnsembleModel(nn.Module):
 
         # # Add variance output
         self.nn5 = EnsembleFC(hidden_size, self.output_dim * 2, ensemble_size, weight_decay=0.0001)
+        self.nn6 = EnsembleFC(hidden_size, 1, ensemble_size, weight_decay=0.0001)
 
         self.max_logvar = nn.Parameter(
             (torch.ones((1, self.output_dim)).float() / 2).to(device), requires_grad=False
@@ -167,8 +168,9 @@ class EnsembleModel(nn.Module):
         # self.output_dim_s = state_size
         # self.output_dim_r = reward_size
         # ####
-        learning_rate = args.model_lr
+
         self.optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        self.optimizer_confidence = torch.optim.Adam(self.nn6.parameters(), lr=learning_rate)
         self.lr_scheduler = get_lrschedule(args, self.optimizer)
         self.apply(init_weights)
         self.swish = Swish()
@@ -201,6 +203,15 @@ class EnsembleModel(nn.Module):
             else:
                 return mean[:, :, : self.reward_size], torch.exp(logvar[:, :, : self.reward_size])
 
+    def forward_confidence(self, x):
+        nn1_output = self.swish(self.nn1(x))
+        nn2_output = self.swish(self.nn2(nn1_output))
+        nn3_output = self.swish(self.nn3(nn2_output))
+        nn4_output = self.swish(self.nn4(nn3_output))
+        nn6_output = self.nn6(nn4_output)
+        print(nn6_output)
+        return nn6_output
+
     def get_decay_loss(self):
         decay_loss = 0.0
         for m in self.children():
@@ -227,6 +238,11 @@ class EnsembleModel(nn.Module):
             total_loss = torch.sum(mse_loss)
         return total_loss, mse_loss
 
+    def loss_confidence(self, model_outs, labels):
+        mse_loss = torch.mean(torch.pow(model_outs - labels, 2), dim=(1, 2))
+        total_loss = torch.sum(mse_loss)
+        return total_loss
+
     def train(self, loss):
         self.optimizer.zero_grad()
 
@@ -239,6 +255,11 @@ class EnsembleModel(nn.Module):
         #     if param.requires_grad:
         #         print(name, param.grad.shape, torch.mean(param.grad), param.grad.flatten()[:5])
         self.optimizer.step()
+
+    def train_confidence(self, loss):
+        self.optimizer_confidence.zero_grad()
+        loss.backward()
+        self.optimizer_confidence.step()
 
 
 class EnsembleDynamicsModel:
@@ -254,6 +275,7 @@ class EnsembleDynamicsModel:
         args=None,
     ):
         self.network_size = network_size
+        self.network_size_c = 1
         self.elite_size = elite_size
         self.model_list = []
         self.state_size = state_size
@@ -263,6 +285,9 @@ class EnsembleDynamicsModel:
         self.elite_model_idxes = []
         ####
         self.elite_model_idxes_reward = []
+        self.elite_model_idxes_c = []
+        ####
+        self.elite_model_idxes_reward_c = []
 
         self.ensemble_model = EnsembleModel(
             state_size,
@@ -274,6 +299,7 @@ class EnsembleDynamicsModel:
             args=args,
         )
         self.scaler = StandardScaler()
+        self.scaler_c = StandardScaler()
         self.state_size = state_size
         self.action_size = action_size
         self.test_run = False
@@ -327,8 +353,12 @@ class EnsembleDynamicsModel:
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[: self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
-                if break_train or self.test_run:
-                    break
+
+            if break_train or self.test_run:
+                mean, _ = self.ensemble_model(inputs, mode="rs", ret_log_var=True) ## new train_inputs for confidence model
+                confidence_val = torch.exp( - torch.pow(mean - labels, 2)) ## new train_labels for confidence model
+                    
+
             logger.info(
             "epoch: {}, holdout mse losses: [{}]".format(
                 epoch, " ".join(map(str, holdout_mse_losses.tolist()))
@@ -339,6 +369,56 @@ class EnsembleDynamicsModel:
             )
         )
 
+    def train_confidence(self, inputs, labels, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
+        self._snapshots_c = {i: (None, 1e10) for i in range(1)}
+        self._max_epochs_since_update_c = max_epochs_since_update
+        self._epochs_since_update_c = 0
+        num_holdout = int(inputs.shape[0] * holdout_ratio)
+        permutation = np.random.permutation(inputs.shape[0])
+        inputs, labels = inputs[permutation], labels[permutation]
+
+        train_inputs, train_labels = inputs[num_holdout:], labels[num_holdout:]
+        holdout_inputs, holdout_labels = inputs[:num_holdout], labels[:num_holdout]
+
+        self.scaler_c.fit(train_inputs)
+        train_inputs = self.scaler_c.transform(train_inputs)
+        holdout_inputs = self.scaler_c.transform(holdout_inputs)
+
+        holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
+        holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
+        holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size_c, 1, 1])
+        holdout_labels = holdout_labels[None, :, :].repeat([self.network_size_c, 1, 1])
+
+        for epoch in itertools.count():
+
+            train_idx = np.vstack(
+                [np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size_c)]
+            )  # num model * len data
+            # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
+            for start_pos in range(0, train_inputs.shape[0], batch_size):
+                idx = train_idx[:, start_pos : start_pos + batch_size]
+                train_input = (
+                    torch.from_numpy(train_inputs[idx]).float().to(device)
+                )  # num_model * batch * dim in
+                train_label = torch.from_numpy(train_labels[idx]).float().to(device)
+                train_outs = self.ensemble_model.forward_confidence(train_input)
+                loss, _ = self.ensemble_model.loss_confidence(train_outs, train_label)
+                self.ensemble_model.train_confidence(loss)
+
+            with torch.no_grad():
+                holdout_mean, holdout_logvar = self.ensemble_model.forward_confidence(
+                    holdout_inputs
+                )
+                _, holdout_mse_losses = self.ensemble_model.loss_confidence(
+                    holdout_mean, holdout_logvar, holdout_labels, inc_var_loss=False
+                )
+                holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
+                sorted_loss_idx = np.argsort(holdout_mse_losses)
+                self.elite_model_idxes_c = sorted_loss_idx[: self.elite_size].tolist()
+                break_train = self._save_best_c(epoch, holdout_mse_losses)
+                if break_train or self.test_run:
+                    return
+    
     def _save_best(self, epoch, holdout_losses):
         updated = False
         for i in range(len(holdout_losses)):
@@ -356,6 +436,26 @@ class EnsembleDynamicsModel:
         else:
             self._epochs_since_update += 1
         if self._epochs_since_update > self._max_epochs_since_update:
+            return True
+        else:
+            return False
+    def _save_best_c(self, epoch, holdout_losses):
+        updated = False
+        for i in range(len(holdout_losses)):
+            current = holdout_losses[i]
+            _, best = self._snapshots_c[i]
+            improvement = (best - current) / best
+            if improvement > 0.01:
+                self._snapshots_c[i] = (epoch, current)
+                # self._save_state(i)
+                updated = True
+                # improvement = (best - current) / best
+
+        if updated:
+            self._epochs_since_update_c = 0
+        else:
+            self._epochs_since_update_c += 1
+        if self._epochs_since_update_c > self._max_epochs_since_update_c:
             return True
         else:
             return False
@@ -431,6 +531,16 @@ class EnsembleEnv:
             reward_size=reward_size,
             hidden_size=hidden_size,
             use_decay=use_decay,
+            args=args,
+        )
+        self.confidence = EnsembleDynamicsModel(
+            1, 
+            elite_size, 
+            state_size, 
+            action_size, 
+            reward_size=reward_size,
+            hidden_size=hidden_size, 
+            use_decay=use_decay, 
             args=args,
         )
         self.trained = False
