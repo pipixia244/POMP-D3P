@@ -98,6 +98,17 @@ class Termination_Fn(object):
             done = ~not_done
             # done = done[:,None]
             return done
+        elif "halfcheetah" in self.env_name and "v0" in self.env_name:
+            return_single = False
+            if len(obs.shape) == 1:
+                obs = obs[None]
+                act = act[None]
+                return_single = True
+            done = np.array([False]).repeat(len(obs))
+            # done = done[:,None]
+            if return_single:
+                done = done[0]
+            return done
         elif self.env_name == "AntTruncatedObs-v2":
             x = next_obs[0]
             not_done = np.isfinite(next_obs).all(axis=-1) * (x >= 0.2) * (x <= 1.0)

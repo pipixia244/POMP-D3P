@@ -167,7 +167,7 @@ class EnsembleModel(nn.Module):
         # self.output_dim_s = state_size
         # self.output_dim_r = reward_size
         # ####
-
+        learning_rate = args.model_lr
         self.optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
         self.lr_scheduler = get_lrschedule(args, self.optimizer)
         self.apply(init_weights)
@@ -329,6 +329,10 @@ class EnsembleDynamicsModel:
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train or self.test_run:
                     break
+            logger.info(
+            "epoch: {}, holdout mse losses: [{}]".format(
+                epoch, " ".join(map(str, holdout_mse_losses.tolist()))
+            ))
         logger.info(
             "epoch: {}, holdout mse losses: [{}]".format(
                 epoch, " ".join(map(str, holdout_mse_losses.tolist()))

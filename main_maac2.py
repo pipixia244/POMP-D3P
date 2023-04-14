@@ -271,9 +271,10 @@ parser.add_argument("--no-ddp", action="store_true", default=False)
 parser.add_argument("--gbp", action="store_true", default=False)
 parser.add_argument("--random-init", action="store_true", default=False)
 
-# new: add test run and cuda device
+# new: add test run and cuda device and model learning rate
 parser.add_argument("--test-run", action="store_true", default=False)
 parser.add_argument("--cuda-device", type=str, default="0")
+parser.add_argument("--model-lr", type=float, default=1e-3)
 
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device

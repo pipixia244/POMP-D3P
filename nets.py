@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
 from typing import Tuple
-
+import traceback
 
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
@@ -192,7 +192,12 @@ class GaussianPolicy(nn.Module):
     def sample(self, state):
         mean, log_std = self.forward(state)
         std = log_std.exp()
+        # try:
         normal = Normal(mean, std)
+        # except Exception as e:
+        #     traceback.print_exc()
+        #     print("state: ", state)
+        #     print("mean: ", mean)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
         y_t = torch.tanh(x_t)
         action = y_t * self.action_scale + self.action_bias
